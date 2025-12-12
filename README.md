@@ -22,6 +22,18 @@ Key Technologies
 - LangChain + LlamaIndex ready abstractions inside `app/rag`.
 - Tool-enabled Agent layer orchestrating intent classification, retrieval, reranking, and generation with either hosted or self-hosted LLMs.
 
+Configuration
+-------------
+
+Set the following in `.env` (see `env.example`):
+
+- `DATABASE_URL` – relational DB (SQLite for dev / MySQL for prod)
+- `REDIS_URL` – cache & token storage
+- `VECTOR_DB_URI` – vector store endpoint
+- `LLM_PROVIDER` / `LLM_MODEL` / `OPENAI_API_KEY` – LLM selection
+- `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET` / `ALIYUN_REGION` – email
+- `FROM_EMAIL` / `FROM_NAME` / `FRONTEND_URL` – email sender & verification links
+
 Project Layout
 --------------
 

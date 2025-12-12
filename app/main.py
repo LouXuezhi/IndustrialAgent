@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import admin, docs, qa
+from app.api.v1 import auth
 from app.core.config import settings
 from app.core.logging import configure_logging
 
@@ -23,7 +24,8 @@ app.add_middleware(
 
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(docs.router, prefix="/api/v1")
-app.include_router(qa.router, prefix="/api/v1")
+app.include_router(qa.router, prefix="/api/v1/qa")
+app.include_router(auth.router, prefix="/api/v1")
 
 
 @app.get("/")
