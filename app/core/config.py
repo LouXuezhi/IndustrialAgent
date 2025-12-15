@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="bge-large")
     llm_provider: str = Field(default="openai")
     llm_model: str = Field(default="gpt-4o-mini")
+    # 重排序配置
+    reranker_model: str = Field(default="BAAI/bge-reranker-base", description="重排序模型名称")
+    enable_rerank: bool = Field(default=True, description="是否启用重排序")
+    rerank_candidate_count: int = Field(default=0, description="重排序候选数量，0表示使用 top_k + 3，>0表示固定数量")
+    rerank_cache_enable: bool = Field(default=True, description="是否启用重排序缓存")
+    rerank_cache_ttl: int = Field(default=7200, description="重排序缓存过期时间（秒），默认2小时")
+    hf_endpoint: str = Field(default="", description="Hugging Face 镜像端点（如 https://hf-mirror.com）")
+    # 查询扩展配置
+    synonym_dict_path: str = Field(default="", description="同义词词典文件路径（JSON格式）")
+    enable_query_expansion: bool = Field(default=True, description="是否启用查询扩展（同义词）")
+    use_llm_expansion: bool = Field(default=False, description="是否使用 LLM 生成扩展词（需要 LLM 配置）")
     openai_api_key: str = Field(default="")
     dashscope_api_key: str = Field(default="")  # legacy combined key
     dashscope_base_url: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1")
@@ -44,6 +55,9 @@ class Settings(BaseSettings):
 
     # 缓存（Redis）
     redis_url: str = Field(default="")
+    # 搜索缓存配置
+    enable_search_cache: bool = Field(default=True, description="是否启用搜索缓存")
+    search_cache_ttl: int = Field(default=3600, description="搜索缓存过期时间（秒），默认1小时")
 
     # JWT
     jwt_secret: str = Field(default="")

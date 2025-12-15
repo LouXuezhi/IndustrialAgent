@@ -13,7 +13,8 @@ class QAAgent:
         self,
         query: str,
         top_k: int = 5,
-        library_ids: list[str] | None = None
+        library_ids: list[str] | None = None,
+        role: str | None = None,
     ) -> dict[str, Any]:
         # Convert string IDs to UUIDs if provided
         library_uuids: list[UUID] | None = None
@@ -23,7 +24,8 @@ class QAAgent:
         result: PipelineResult = await self.pipeline.run(
             query=query,
             top_k=top_k,
-            library_ids=library_uuids
+            library_ids=library_uuids,
+            role=role,
         )
         return {
             "answer": result.answer,

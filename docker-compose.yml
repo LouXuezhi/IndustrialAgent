@@ -1,0 +1,130 @@
+# docker-compose.yml
+# 开发环境配置
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: industrial-qa-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-industrial_qa}
+      MYSQL_USER: ${MYSQL_USER:-industrial}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-industrial123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - industrial-qa-network
+    restart: unless-stopped
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: industrial-qa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - industrial-qa-network
+    restart: unless-stopped
+
+  # FastAPI 应用
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: industrial-qa-app
+    environment:
+      # 应用配置
+      APP_ENV: ${APP_ENV:-local}
+      APP_NAME: ${APP_NAME:-Industrial QA Backend}
+      
+      # 数据库配置（使用服务名连接）
+      DATABASE_URL: mysql+aiomysql://${MYSQL_USER:-industrial}:${MYSQL_PASSWORD:-industrial123}@mysql:3306/${MYSQL_DATABASE:-industrial_qa}?charset=utf8mb4
+      
+      # Redis 配置
+      REDIS_URL: redis://redis:6379/0
+      
+      # 向量库配置
+      VECTOR_DB_URI: chroma://./chroma_store
+      STORAGE_DIR: /app/data/uploads
+      
+      # LLM 配置（从 .env 读取）
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      
+      # Embedding 配置
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-large}
+      
+      # JWT 配置
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRES_MINUTES: ${ACCESS_TOKEN_EXPIRES_MINUTES:-60}
+      
+      # 缓存配置
+      ENABLE_SEARCH_CACHE: ${ENABLE_SEARCH_CACHE:-true}
+      SEARCH_CACHE_TTL: ${SEARCH_CACHE_TTL:-3600}
+      
+      # Hugging Face 配置
+      HF_ENDPOINT: ${HF_ENDPOINT:-}
+      TOKENIZERS_PARALLELISM: false
+      
+      # 重排序配置
+      RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-base}
+      ENABLE_RERANK: ${ENABLE_RERANK:-true}
+      
+      # 查询扩展配置
+      SYNONYM_DICT_PATH: ${SYNONYM_DICT_PATH:-}
+      ENABLE_QUERY_EXPANSION: ${ENABLE_QUERY_EXPANSION:-true}
+      USE_LLM_EXPANSION: ${USE_LLM_EXPANSION:-false}
+      
+      # CORS 配置
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-["*"]}
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化数据
+      - ./data/uploads:/app/data/uploads
+      - ./chroma_store:/app/chroma_store
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - industrial-qa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  industrial-qa-network:
+    driver: bridge
+

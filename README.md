@@ -4,6 +4,22 @@
 
 ## 🚀 快速开始
 
+### 方式 1: Docker 部署（推荐）
+
+```bash
+# 1. 配置环境变量
+cp env.example .env
+# 编辑 .env，填入你的 API 密钥和数据库连接
+
+# 2. 一键部署
+./deploy.sh
+
+# 3. 访问服务
+# API 文档: http://localhost:8000/docs
+```
+
+### 方式 2: 本地开发
+
 ```bash
 # 1. 安装依赖
 uv sync

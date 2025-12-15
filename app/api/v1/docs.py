@@ -2,8 +2,11 @@ from pathlib import Path
 import uuid
 import zipfile
 import io
+import logging
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body, Query, status
 from fastapi.responses import StreamingResponse, Response
@@ -15,9 +18,17 @@ from app.core.response import StandardResponse
 from app.core.security import get_current_user
 from app.db.models import DocumentLibrary, User, Group, GroupMember, Document, Chunk
 from app.db.session import async_session
-from app.deps import get_db_session
+from app.deps import get_db_session, get_retriever
 from app.core.config import get_settings
 from app.rag.ingestion import DocumentIngestor, _extract_text_from_file
+from app.rag.retriever import LangchainRetriever
+from app.core.cache import (
+    generate_search_cache_key,
+    get_cached_search_result,
+    cache_search_result,
+    record_cache_stats,
+    calculate_cache_ttl,
+)
 
 
 class LibraryCreateRequest(BaseModel):
@@ -199,13 +210,19 @@ async def create_library(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> StandardResponse[LibraryResponse]:
-    owner_id = payload.owner_id or current_user.id
     owner_type = payload.owner_type or "user"
 
     if owner_type == "user":
-        if owner_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        # For user libraries, use current user's ID
+        owner_id = current_user.id
     elif owner_type == "group":
+        # For group libraries, owner_id (group_id) must be provided
+        if not payload.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="owner_id (group_id) is required when owner_type is 'group'"
+            )
+        owner_id = payload.owner_id
         # Only group owner/admin can create library under group
         await _assert_group_member(session, group_id=owner_id, user_id=current_user.id, allowed_roles=("owner", "admin"))
     else:
@@ -365,6 +382,32 @@ async def vectorize_document(
     code = 0 if vectorized else 1
     message = "success" if vectorized else f"vectorization failed: {report.error or 'unknown error'}"
 
+    # 如果向量化成功，清除对应库的 BM25 缓存（如果使用混合检索）
+    if vectorized and document.library_id:
+        try:
+            from app.rag.retriever import HybridRetriever
+            from app.deps import get_retriever
+            retriever = get_retriever(use_hybrid=True)
+            if isinstance(retriever, HybridRetriever):
+                retriever.invalidate_bm25_cache(document.library_id)
+        except Exception:
+            # 忽略缓存清除错误，不影响主流程
+            pass
+        
+        # 清除搜索缓存（文档向量化后，相关查询结果可能已变化）
+        try:
+            settings = get_settings()
+            if settings.enable_search_cache and settings.redis_url:
+                import redis.asyncio as redis
+                redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+                try:
+                    from app.core.cache import invalidate_search_cache
+                    await invalidate_search_cache(redis_client, library_id=str(document.library_id))
+                finally:
+                    await redis_client.aclose()
+        except Exception as e:
+            logger.warning(f"清除搜索缓存失败: {e}")
+
     data = VectorizeResponse(
         document_id=str(document_id),
         chunks=report.chunk_count,
@@ -467,6 +510,19 @@ async def delete_library(
         ingestor._client.delete_collection(name=collection_name)
     except Exception:
         pass
+    
+    # 清除搜索缓存（库删除后，相关查询结果已失效）
+    try:
+        if settings.enable_search_cache and settings.redis_url:
+            import redis.asyncio as redis
+            redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+            try:
+                from app.core.cache import invalidate_search_cache
+                await invalidate_search_cache(redis_client, library_id=str(library_id))
+            finally:
+                await redis_client.aclose()
+    except Exception as e:
+        logger.warning(f"清除搜索缓存失败: {e}")
 
     return StandardResponse(data={"deleted": True})
 
@@ -623,10 +679,40 @@ async def batch_delete_documents(
         await session.delete(chunk)
     
     # Delete documents
+    library_ids_affected = set()
     for document in documents:
+        if document.library_id:
+            library_ids_affected.add(document.library_id)
         await session.delete(document)
     
     await session.commit()
+    
+    # 清除受影响库的 BM25 缓存
+    if library_ids_affected:
+        try:
+            from app.rag.retriever import HybridRetriever
+            from app.deps import get_retriever
+            retriever = get_retriever(use_hybrid=True)
+            if isinstance(retriever, HybridRetriever):
+                for lib_id in library_ids_affected:
+                    retriever.invalidate_bm25_cache(lib_id)
+        except Exception:
+            pass
+        
+        # 清除搜索缓存（批量删除文档后，相关查询结果已失效）
+        try:
+            settings = get_settings()
+            if settings.enable_search_cache and settings.redis_url:
+                import redis.asyncio as redis
+                redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+                try:
+                    from app.core.cache import invalidate_search_cache
+                    for lib_id in library_ids_affected:
+                        await invalidate_search_cache(redis_client, library_id=str(lib_id))
+                finally:
+                    await redis_client.aclose()
+        except Exception as e:
+            logger.warning(f"清除搜索缓存失败: {e}")
     
     return StandardResponse(data={"deleted": len(documents), "document_ids": payload.document_ids})
 
@@ -758,10 +844,36 @@ async def delete_document(
         await session.delete(chunk)
     
     # Delete document
+    library_id = document.library_id
     await session.delete(document)
     await session.commit()
     
     # TODO: Remove from vector store (best-effort)
+    
+    # 清除受影响库的 BM25 缓存
+    if library_id:
+        try:
+            from app.rag.retriever import HybridRetriever
+            from app.deps import get_retriever
+            retriever = get_retriever(use_hybrid=True)
+            if isinstance(retriever, HybridRetriever):
+                retriever.invalidate_bm25_cache(library_id)
+        except Exception:
+            pass
+    
+    # 清除搜索缓存（文档删除后，相关查询结果可能已失效）
+    try:
+        settings = get_settings()
+        if settings.enable_search_cache and settings.redis_url:
+            import redis.asyncio as redis
+            redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+            try:
+                from app.core.cache import invalidate_search_cache
+                await invalidate_search_cache(redis_client, library_id=str(library_id) if library_id else None)
+            finally:
+                await redis_client.aclose()
+    except Exception as e:
+        logger.warning(f"清除搜索缓存失败: {e}")
     
     return StandardResponse(data={"deleted": True, "document_id": str(document_id)})
 
@@ -812,36 +924,115 @@ async def search_documents(
     payload: DocumentSearchRequest,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
+    retriever: LangchainRetriever = Depends(get_retriever),
 ) -> StandardResponse[list[DocumentSearchResult]]:
-    """Search documents by title and content."""
+    """
+    使用混合检索（向量 + BM25）搜索文档，支持缓存。
+    
+    优化评分系统：
+    - 向量相似度分数（主要）
+    - 标题匹配权重（增强）
+    - 匹配次数（多次匹配更相关）
+    
+    缓存策略：
+    - 缓存键包含查询、库ID、限制和用户ID（权限隔离）
+    - 动态 TTL：根据结果数量和查询长度调整
+    - 缓存命中时直接返回，未命中时执行检索并缓存结果
+    """
+    from app.rag.retriever import RetrievedChunk
+    from app.core.config import get_settings
+    
+    settings = get_settings()
+    redis_client = None
+    cache_key = None
+    
+    # 1. 尝试从缓存获取（如果启用缓存）
+    if settings.enable_search_cache and settings.redis_url:
+        try:
+            import redis.asyncio as redis
+            redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+            cache_key = generate_search_cache_key(
+                query=payload.query,
+                library_id=str(payload.library_id) if payload.library_id else None,
+                limit=payload.limit,
+                user_id=str(current_user.id)
+            )
+            
+            cached_result = await get_cached_search_result(redis_client, cache_key)
+            if cached_result is not None:
+                # 记录缓存命中
+                await record_cache_stats(redis_client, hit=True)
+                logger.info(f"搜索缓存命中: {cache_key}")
+                await redis_client.aclose()
+                return StandardResponse(data=cached_result)
+        except Exception as e:
+            logger.warning(f"缓存读取失败: {e}")
+            if redis_client:
+                try:
+                    await redis_client.aclose()
+                except:
+                    pass
+                redis_client = None
+    
+    # 2. 使用混合检索获取相关 chunks
+    library_ids = [payload.library_id] if payload.library_id else None
+    # 获取更多候选结果，用于后续聚合和评分
+    chunks = await retriever.search(
+        query=payload.query,
+        top_k=payload.limit * 5,  # 获取更多候选，用于文档聚合
+        library_ids=library_ids,
+        use_hybrid=True
+    )
+    
+    if not chunks:
+        return StandardResponse(data=[])
+    
+    # 2. 按文档聚合结果，收集所有匹配的 chunks 和分数
+    doc_chunks: dict[str, list[RetrievedChunk]] = {}
+    doc_vector_scores: dict[str, list[float]] = {}
+    
+    for chunk in chunks:
+        doc_id = chunk.document_id
+        if doc_id not in doc_chunks:
+            doc_chunks[doc_id] = []
+            doc_vector_scores[doc_id] = []
+        doc_chunks[doc_id].append(chunk)
+        doc_vector_scores[doc_id].append(chunk.score)
+    
+    # 3. 获取所有相关文档信息（批量查询，避免 N+1）
+    doc_ids = list(doc_chunks.keys())
+    docs_result = await session.execute(
+        select(Document).where(Document.id.in_([uuid.UUID(doc_id) for doc_id in doc_ids]))
+    )
+    docs_dict = {str(doc.id): doc for doc in docs_result.scalars().all()}
+    
+    # 4. 计算文档综合分数
     query_lower = payload.query.lower()
+    doc_final_scores: dict[str, float] = {}
     
-    # Build base query
-    base_query = select(Document)
-    if payload.library_id:
-        base_query = base_query.where(Document.library_id == payload.library_id)
-    
-    # Get all matching documents
-    result = await session.execute(base_query)
-    all_docs = result.scalars().all()
-    
-    # Filter by permissions and search query
-    matching_docs: list[tuple[Document, float]] = []
-    for doc in all_docs:
-        # Check permissions
+    for doc_id, chunks_list in doc_chunks.items():
+        doc = docs_dict.get(doc_id)
+        if not doc:
+            continue
+        
+        # 权限检查
         has_access = False
         if doc.library_id:
-            library = await _get_library_or_404(session, doc.library_id)
-            if library.owner_type == "user":
-                has_access = library.owner_id == current_user.id
-            elif library.owner_type == "group":
-                try:
-                    await _assert_group_member(
-                        session, group_id=library.owner_id, user_id=current_user.id, allowed_roles=("owner", "admin", "member")
-                    )
-                    has_access = True
-                except HTTPException:
-                    has_access = False
+            try:
+                library = await _get_library_or_404(session, doc.library_id)
+                if library.owner_type == "user":
+                    has_access = library.owner_id == current_user.id
+                elif library.owner_type == "group":
+                    try:
+                        await _assert_group_member(
+                            session, group_id=library.owner_id, user_id=current_user.id, 
+                            allowed_roles=("owner", "admin", "member")
+                        )
+                        has_access = True
+                    except HTTPException:
+                        has_access = False
+            except HTTPException:
+                has_access = False
         else:
             # Documents without library are accessible to owner
             has_access = True
@@ -849,60 +1040,117 @@ async def search_documents(
         if not has_access:
             continue
         
-        # Search in title
-        score = 0.0
-        if query_lower in doc.title.lower():
-            score += 2.0  # Title match has higher weight
+        # 计算综合分数
+        # 基础分数：向量检索的最高分（或加权平均）
+        vector_score = max(doc_vector_scores[doc_id]) if doc_vector_scores[doc_id] else 0.0
         
-        # Search in chunks content
-        chunk_result = await session.execute(
-            select(Chunk).where(Chunk.document_id == doc.id)
-        )
-        chunks = chunk_result.scalars().all()
-        for chunk in chunks:
-            if query_lower in chunk.content.lower():
-                score += 1.0
-                break
+        # 标题匹配增强（完全匹配权重更高）
+        title_score = 0.0
+        title_lower = doc.title.lower()
+        if query_lower == title_lower:
+            title_score = 0.5  # 完全匹配
+        elif query_lower in title_lower:
+            title_score = 0.3  # 部分匹配
+        elif any(word in title_lower for word in query_lower.split() if len(word) > 1):
+            title_score = 0.1  # 关键词匹配
         
-        if score > 0:
-            matching_docs.append((doc, score))
+        # 匹配次数增强（多次匹配说明更相关）
+        match_count_boost = min(0.2, len(chunks_list) * 0.05)  # 最多增加 0.2
+        
+        # 综合分数 = 向量分数（归一化到 0-1） + 标题匹配 + 匹配次数增强
+        # 向量分数已经是归一化的，直接使用
+        final_score = vector_score + title_score + match_count_boost
+        
+        doc_final_scores[doc_id] = final_score
     
-    # Sort by score and limit
-    matching_docs.sort(key=lambda x: x[1], reverse=True)
-    matching_docs = matching_docs[:payload.limit]
+    # 5. 按分数排序并限制数量
+    sorted_doc_ids = sorted(
+        doc_final_scores.items(), 
+        key=lambda x: x[1], 
+        reverse=True
+    )[:payload.limit]
     
-    # Build response with snippets
+    # 6. 构建响应
     results: list[DocumentSearchResult] = []
-    for doc, score in matching_docs:
-        # Get snippet from first chunk
-        chunk_result = await session.execute(
-            select(Chunk).where(Chunk.document_id == doc.id).limit(1)
-        )
-        chunk = chunk_result.scalar_one_or_none()
-        snippet = ""
-        if chunk:
-            content = chunk.content
-            query_pos = content.lower().find(query_lower)
+    for doc_id, score in sorted_doc_ids:
+        doc = docs_dict.get(doc_id)
+        if not doc:
+            continue
+        
+        # 获取最佳匹配的 chunk 作为 snippet
+        best_chunk = max(doc_chunks[doc_id], key=lambda c: c.score)
+        snippet = best_chunk.text
+        
+        # 如果 snippet 太长，截取并添加省略号
+        if len(snippet) > 200:
+            # 尝试在查询词附近截取
+            query_pos = snippet.lower().find(query_lower)
             if query_pos >= 0:
-                start = max(0, query_pos - 50)
-                end = min(len(content), query_pos + len(payload.query) + 50)
-                snippet = content[start:end]
+                start = max(0, query_pos - 80)
+                end = min(len(snippet), query_pos + len(payload.query) + 80)
+                snippet = snippet[start:end]
                 if start > 0:
                     snippet = "..." + snippet
-                if end < len(content):
+                if end < len(best_chunk.text):
                     snippet = snippet + "..."
             else:
-                snippet = content[:200] + "..." if len(content) > 200 else content
+                snippet = snippet[:200] + "..."
         
         results.append(
             DocumentSearchResult(
-                document_id=str(doc.id),
+                document_id=doc_id,
                 title=doc.title,
                 snippet=snippet,
-                score=score,
+                score=round(score, 4),  # 保留4位小数
                 library_id=str(doc.library_id) if doc.library_id else None,
             )
         )
+    
+    # 7. 缓存结果（如果启用缓存）
+    if settings.enable_search_cache and settings.redis_url and results:
+        try:
+            if not redis_client:
+                import redis.asyncio as redis
+                redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+                cache_key = generate_search_cache_key(
+                    query=payload.query,
+                    library_id=str(payload.library_id) if payload.library_id else None,
+                    limit=payload.limit,
+                    user_id=str(current_user.id)
+                )
+            
+            # 转换为可序列化的格式
+            cache_data = [
+                {
+                    "document_id": r.document_id,
+                    "title": r.title,
+                    "snippet": r.snippet,
+                    "score": r.score,
+                    "library_id": r.library_id
+                }
+                for r in results
+            ]
+            
+            # 动态计算 TTL
+            ttl = calculate_cache_ttl(
+                result_count=len(results),
+                query_length=len(payload.query)
+            )
+            # 使用配置的 TTL 作为上限
+            ttl = min(ttl, settings.search_cache_ttl)
+            
+            await cache_search_result(redis_client, cache_key, cache_data, ttl)
+            # 记录缓存未命中
+            await record_cache_stats(redis_client, hit=False)
+            logger.debug(f"搜索缓存写入: {cache_key}, TTL: {ttl}s")
+        except Exception as e:
+            logger.warning(f"缓存写入失败: {e}")
+        finally:
+            if redis_client:
+                try:
+                    await redis_client.aclose()
+                except:
+                    pass
     
     return StandardResponse(data=results)
 

@@ -40,7 +40,8 @@ async def ask_entrypoint(
     result = await agent.run(
         query=payload.query,
         top_k=payload.top_k,
-        library_ids=payload.library_ids
+        library_ids=payload.library_ids,
+        role=current_user.role,  # 传递用户角色，用于选择对应的 prompt
     )
     return StandardResponse(data=AskData(**result))
 
