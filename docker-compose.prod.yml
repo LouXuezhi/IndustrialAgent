@@ -66,6 +66,7 @@ services:
       
       # LLM 配置
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
@@ -76,7 +77,6 @@ services:
       
       # Embedding 配置
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-large}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       # JWT 配置（生产环境必须设置强密码）
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
@@ -102,6 +102,15 @@ services:
       # CORS 配置（生产环境应限制来源）
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-[]}
       
+      # 邮件/前端链接配置
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_REGION: ${ALIYUN_REGION:-cn-hangzhou}
+      ALIYUN_SMTP_PASSWORD: ${ALIYUN_SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-noreply@example.com}
+      FROM_NAME: ${FROM_NAME:-Industrial QA System}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+
       # API Key 级别的简易访问控制（可选）
       API_TOKEN: ${API_TOKEN:-}
     volumes:
