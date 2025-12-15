@@ -11,7 +11,7 @@
 ## 初始迁移
 
 ✅ 已创建初始迁移脚本 `001_create_admin_user.py`，包含：
-- 创建管理员账号（用户名: LXZ, 邮箱: admin@louxuezhi.com）
+- 创建管理员账号（用户名: LXZ, 邮箱: louxuezhi@outlook.com）
 - 如果账号已存在，则更新为管理员权限
 
 ## 常用命令

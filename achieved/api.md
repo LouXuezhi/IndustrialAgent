@@ -1193,7 +1193,7 @@
 # 1. 管理员登录获取 token
 TOKEN=$(curl -X POST http://localhost:8000/api/v1/login \
   -H "Content-Type: application/json" \
-  -d '{"payload": {"email": "admin@louxuezhi.com", "password": "271828LXZ"}}' \
+  -d '{"payload": {"email": "louxuezhi@outlook.com", "password": "271828LXZ"}}' \
   | jq -r '.data.access_token')
 
 # 2. 创建新的管理员账号
@@ -1225,7 +1225,7 @@ python scripts/create_admin.py newadmin@example.com secure_password_123 NewAdmin
 alembic upgrade head
 ```
 
-这会自动创建初始管理员账号（用户名: LXZ, 邮箱: admin@louxuezhi.com）
+这会自动创建初始管理员账号（用户名: LXZ, 邮箱: louxuezhi@outlook.com）
 
 ---
 

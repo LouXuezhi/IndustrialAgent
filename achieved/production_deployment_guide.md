@@ -405,11 +405,11 @@ docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
 ```bash
 # 检查管理员账号是否创建成功
 docker compose -f docker-compose.prod.yml exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} \
-    -e "SELECT email, username, role FROM ${MYSQL_DATABASE}.users WHERE email='admin@louxuezhi.com';"
+    -e "SELECT email, username, role FROM ${MYSQL_DATABASE}.users WHERE email='louxuezhi@outlook.com';"
 ```
 
 **默认管理员账号信息**:
-- 邮箱: `admin@louxuezhi.com`
+- 邮箱: `louxuezhi@outlook.com`
 - 用户名: `LXZ`
 - 密码: `271828LXZ`
 
@@ -656,7 +656,7 @@ curl -X POST http://your-domain.com/api/v1/login \
   -H "Content-Type: application/json" \
   -d '{
     "payload": {
-      "email": "admin@louxuezhi.com",
+      "email": "louxuezhi@outlook.com",
       "password": "271828LXZ"
     }
   }'
@@ -668,7 +668,7 @@ curl -X POST http://your-domain.com/api/v1/login \
 # 获取访问令牌
 TOKEN=$(curl -s -X POST http://your-domain.com/api/v1/login \
   -H "Content-Type: application/json" \
-  -d '{"payload": {"email": "admin@louxuezhi.com", "password": "271828LXZ"}}' \
+  -d '{"payload": {"email": "louxuezhi@outlook.com", "password": "271828LXZ"}}' \
   | jq -r '.data.access_token')
 
 # 测试获取用户列表

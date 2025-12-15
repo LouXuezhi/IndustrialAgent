@@ -127,12 +127,12 @@ docker-compose -f docker-compose.prod.yml run --rm app alembic current
 
 # 验证管理员账号（通过 MySQL 客户端）
 docker-compose -f docker-compose.prod.yml exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} \
-    -e "SELECT email, username, role FROM industrial_qa.users WHERE email='admin@louxuezhi.com';"
+    -e "SELECT email, username, role FROM industrial_qa.users WHERE email='louxuezhi@outlook.com';"
 ```
 
 **预期结果**：
 - 数据库表已创建
-- 管理员账号已创建（用户名: LXZ, 邮箱: admin@louxuezhi.com）
+- 管理员账号已创建（用户名: LXZ, 邮箱: louxuezhi@outlook.com）
 
 ### 阶段 4: 启动应用服务
 
@@ -210,7 +210,7 @@ server {
 curl -X POST http://yourdomain.com/api/v1/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@louxuezhi.com",
+    "email": "louxuezhi@outlook.com",
     "password": "271828LXZ"
   }'
 ```

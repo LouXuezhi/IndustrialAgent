@@ -7,7 +7,7 @@
 ## 管理员账号信息
 
 - **用户名**: `LXZ`
-- **邮箱**: `admin@louxuezhi.com`
+- **邮箱**: `louxuezhi@outlook.com`
 - **密码**: `271828LXZ`
 - **角色**: `admin`
 - **状态**: `is_active=True`, `is_verified=True`
@@ -51,7 +51,7 @@ alembic upgrade 001_create_admin_user
 curl -X POST http://localhost:8000/api/v1/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@louxuezhi.com",
+    "email": "louxuezhi@outlook.com",
     "password": "271828LXZ"
   }'
 ```

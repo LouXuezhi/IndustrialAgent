@@ -149,7 +149,7 @@ if [ "$ENV" = "prod" ]; then
     # 验证管理员账号
     echo -e "${BLUE}验证管理员账号...${NC}"
     $DOCKER_COMPOSE -f $COMPOSE_FILE exec -T mysql mysql -u root -p${MYSQL_ROOT_PASSWORD:-rootpassword} \
-        -e "SELECT email, username, role FROM ${MYSQL_DATABASE:-industrial_qa}.users WHERE email='admin@louxuezhi.com';" 2>/dev/null || {
+        -e "SELECT email, username, role FROM ${MYSQL_DATABASE:-industrial_qa}.users WHERE email='louxuezhi@outlook.com';" 2>/dev/null || {
         echo -e "${YELLOW}⚠️  无法验证管理员账号${NC}"
     }
 else
@@ -195,7 +195,7 @@ echo ""
 # 显示信息
 if [ "$ENV" = "prod" ]; then
     echo -e "${GREEN}管理员账号信息:${NC}"
-    echo "  邮箱: admin@louxuezhi.com"
+    echo "  邮箱: louxuezhi@outlook.com"
     echo "  用户名: LXZ"
     echo "  密码: 271828LXZ"
     echo ""

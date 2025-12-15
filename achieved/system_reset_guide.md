@@ -153,7 +153,7 @@ docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
 ### 数据库状态
 - 所有表已创建（空表）
 - 如果使用 Alembic（生产环境），会自动创建管理员账号：
-  - 邮箱: `admin@louxuezhi.com`
+  - 邮箱: `louxuezhi@outlook.com`
   - 用户名: `LXZ`
   - 密码: `271828LXZ`
 
@@ -195,7 +195,7 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} \
 
 # 3. 检查管理员账号（生产环境）
 docker compose -f docker-compose.prod.yml exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} \
-    -e "SELECT email, username, role FROM industrial_qa.users WHERE email='admin@louxuezhi.com';"
+    -e "SELECT email, username, role FROM industrial_qa.users WHERE email='louxuezhi@outlook.com';"
 
 # 4. 检查应用健康
 curl http://localhost:8000/
@@ -203,7 +203,7 @@ curl http://localhost:8000/
 # 5. 测试登录（生产环境）
 curl -X POST http://localhost:8000/api/v1/login \
   -H "Content-Type: application/json" \
-  -d '{"payload": {"email": "admin@louxuezhi.com", "password": "271828LXZ"}}'
+  -d '{"payload": {"email": "louxuezhi@outlook.com", "password": "271828LXZ"}}'
 ```
 
 ## 常见问题
