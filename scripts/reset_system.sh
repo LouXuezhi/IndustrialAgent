@@ -3,6 +3,12 @@
 
 set -e
 
+# 管理员默认信息
+ADMIN_EMAIL="louxuezhi@outlook.com"
+ADMIN_USERNAME="LXZ"
+ADMIN_FULL_NAME="Administrator"
+ADMIN_PASSWORD="271828LXZ"
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,12 +45,12 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # 检测环境
-if [ -f "docker-compose.prod.yml" ]; then
-    COMPOSE_FILE="docker-compose.prod.yml"
-    ENV="prod"
-elif [ -f "docker-compose.yml" ]; then
+if [ -f "docker-compose.yml" ]; then
     COMPOSE_FILE="docker-compose.yml"
     ENV="dev"
+elif [ -f "docker-compose.prod.yml" ]; then
+    COMPOSE_FILE="docker-compose.prod.yml"
+    ENV="prod"
 else
     echo -e "${RED}❌ 未找到 docker-compose 文件${NC}"
     exit 1
@@ -158,6 +164,15 @@ else
     $DOCKER_COMPOSE -f $COMPOSE_FILE build app
     $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm app python scripts/init_db.py
     echo -e "${GREEN}✅ 数据库初始化完成${NC}"
+fi
+
+# 创建/更新默认管理员账号（两种环境都执行，具备幂等性）
+echo -e "${BLUE}创建默认管理员账号...${NC}"
+if $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm app python scripts/create_admin.py \
+    "$ADMIN_EMAIL" "$ADMIN_PASSWORD" "$ADMIN_USERNAME" "$ADMIN_FULL_NAME" >/dev/null; then
+    echo -e "${GREEN}✅ 管理员账号已创建/更新${NC}"
+else
+    echo -e "${YELLOW}⚠️  创建管理员账号失败，请手动检查${NC}"
 fi
 echo ""
 

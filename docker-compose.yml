@@ -1,7 +1,5 @@
 # docker-compose.yml
 # 开发环境配置
-version: '3.8'
-
 services:
   # MySQL 数据库
   mysql:
@@ -69,10 +67,14 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_LLM_API_KEY: ${DASHSCOPE_LLM_API_KEY:-}
+      DASHSCOPE_LLM_BASE_URL: ${DASHSCOPE_LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_EMBEDDING_API_KEY: ${DASHSCOPE_EMBEDDING_API_KEY:-}
+      DASHSCOPE_EMBEDDING_BASE_URL: ${DASHSCOPE_EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       
       # Embedding 配置
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-large}
-      
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       # JWT 配置
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
@@ -97,6 +99,9 @@ services:
       
       # CORS 配置
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-["*"]}
+      
+      # API Key 级别的简易访问控制（可选）
+      API_TOKEN: ${API_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:

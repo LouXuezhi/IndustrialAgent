@@ -4,6 +4,10 @@ FROM python:3.11-slim as builder
 
 WORKDIR /app
 
+# 可配置的 PyPI 镜像源（网络不佳时可通过构建参数覆盖）
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -11,7 +15,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 uv
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} uv
+
+# uv 使用同一镜像源
+ENV UV_INDEX_URL=${PIP_INDEX_URL}
 
 # 复制依赖文件
 COPY pyproject.toml uv.lock ./
